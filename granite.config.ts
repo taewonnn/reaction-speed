@@ -4,6 +4,6 @@ import { defineConfig } from '@granite-js/react-native/config';
 
 export default defineConfig({
   appName: 'reaction-speed',
-  scheme: 'granite',
+  scheme: 'intoss',
   plugins: [router(), hermes()],
 });
