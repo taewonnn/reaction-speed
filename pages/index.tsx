@@ -15,13 +15,34 @@ type GameState =
   | 'result'
   | 'too_early'
 
+type AppsInTossFramework = typeof import('@apps-in-toss/framework')
+
 export const Route = createRoute('/', {
   component: ReactionSpeedPage,
 })
 
+/**
+ * 여기에 앱인토스 콘솔에서 발급받은 전면형 광고 ID를 넣으면 됩니다.
+ */
+const FULLSCREEN_AD_GROUP_ID = 'YOUR_FULLSCREEN_AD_GROUP_ID'
+
+/**
+ * 로컬 개발 환경에서는 @apps-in-toss/framework import 자체가 에러날 수 있어서
+ * 실제 광고 버튼을 눌렀을 때만 동적으로 불러옵니다.
+ */
+async function loadAppsInTossFramework(): Promise<AppsInTossFramework | null> {
+  try {
+    return await import('@apps-in-toss/framework')
+  } catch (error) {
+    console.warn('[AIT] framework load failed:', error)
+    return null
+  }
+}
+
 function ReactionSpeedPage() {
   const [state, setState] = useState<GameState>('idle')
   const [reactionTime, setReactionTime] = useState<number | null>(null)
+  const [isAdLoading, setIsAdLoading] = useState(false)
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startTimeRef = useRef<number>(0)
@@ -56,10 +77,97 @@ function ReactionSpeedPage() {
     }
   }, [state])
 
-  const handleWatchAdAndRestart = useCallback(() => {
-    // 로컬 테스트용: 실제 AIT 환경에서는 여기서 전면형 광고 호출 후 handleStart()
-    handleStart()
-  }, [handleStart])
+  /**
+   * 광고보고 다시하기
+   *
+   * 동작 흐름:
+   * 1. @apps-in-toss/framework 동적 로드
+   * 2. loadFullScreenAd 로 전면형 광고 로드
+   * 3. loaded 이벤트 수신 시 showFullScreenAd 로 광고 노출
+   * 4. dismissed 또는 failedToShow 시 게임 재시작
+   * 5. 로컬/미지원/에러 상황에서는 바로 게임 재시작
+   */
+  const handleWatchAdAndRestart = useCallback(async () => {
+    if (isAdLoading) return
+
+    setIsAdLoading(true)
+
+    const framework = await loadAppsInTossFramework()
+
+    if (!framework) {
+      setIsAdLoading(false)
+      handleStart()
+      return
+    }
+
+    const { loadFullScreenAd, showFullScreenAd } = framework
+
+    if (
+      !loadFullScreenAd.isSupported() ||
+      !showFullScreenAd.isSupported()
+    ) {
+      setIsAdLoading(false)
+      handleStart()
+      return
+    }
+
+    let hasStarted = false
+
+    const restartOnce = () => {
+      if (hasStarted) return
+
+      hasStarted = true
+      setIsAdLoading(false)
+      handleStart()
+    }
+
+    const cleanupLoadAd = loadFullScreenAd({
+      options: {
+        adGroupId: FULLSCREEN_AD_GROUP_ID,
+      },
+      onEvent: event => {
+        console.log('[FullScreenAd] load event:', event)
+
+        if (event.type === 'loaded') {
+          cleanupLoadAd?.()
+
+          const cleanupShowAd = showFullScreenAd({
+            options: {
+              adGroupId: FULLSCREEN_AD_GROUP_ID,
+            },
+            onEvent: showEvent => {
+              console.log('[FullScreenAd] show event:', showEvent)
+
+              if (
+                showEvent.type === 'dismissed' ||
+                showEvent.type === 'failedToShow'
+              ) {
+                cleanupShowAd?.()
+                restartOnce()
+              }
+            },
+            onError: error => {
+              console.error('[FullScreenAd] show error:', error)
+              cleanupShowAd?.()
+              restartOnce()
+            },
+          })
+
+          return
+        }
+
+        if (event.type === 'failedToShow') {
+          cleanupLoadAd?.()
+          restartOnce()
+        }
+      },
+      onError: error => {
+        console.error('[FullScreenAd] load error:', error)
+        cleanupLoadAd?.()
+        restartOnce()
+      },
+    })
+  }, [handleStart, isAdLoading])
 
   if (state === 'idle') {
     return (
@@ -173,10 +281,16 @@ function ReactionSpeedPage() {
         </Text>
 
         <TouchableOpacity
-          style={styles.adButton}
+          style={[
+            styles.adButton,
+            isAdLoading && styles.disabledButton,
+          ]}
+          disabled={isAdLoading}
           onPress={handleWatchAdAndRestart}
         >
-          <Text style={styles.primaryButtonText}>광고보고 다시하기</Text>
+          <Text style={styles.primaryButtonText}>
+            {isAdLoading ? '광고 불러오는 중...' : '광고보고 다시하기'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
@@ -260,6 +374,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     width: '100%',
     alignItems: 'center',
+  },
+
+  disabledButton: {
+    opacity: 0.55,
   },
 
   primaryButtonText: {
