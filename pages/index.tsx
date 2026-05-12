@@ -1,5 +1,5 @@
 import { createRoute } from '@granite-js/react-native'
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import {
   StyleSheet,
   View,
@@ -21,10 +21,9 @@ export const Route = createRoute('/', {
   component: ReactionSpeedPage,
 })
 
-/**
- * 여기에 앱인토스 콘솔에서 발급받은 전면형 광고 ID를 넣으면 됩니다.
- */
-const FULLSCREEN_AD_GROUP_ID = 'YOUR_FULLSCREEN_AD_GROUP_ID'
+
+const FULLSCREEN_AD_GROUP_ID = 'ait.v2.live.a2c2333373d542b2';
+const BANNER_AD_GROUP_ID = 'ait.v2.live.14e6d521eb564f44';
 
 /**
  * 로컬 개발 환경에서는 @apps-in-toss/framework import 자체가 에러날 수 있어서
@@ -39,13 +38,24 @@ async function loadAppsInTossFramework(): Promise<AppsInTossFramework | null> {
   }
 }
 
+type InlineAdComponent = AppsInTossFramework['InlineAd']
+
 function ReactionSpeedPage() {
   const [state, setState] = useState<GameState>('idle')
   const [reactionTime, setReactionTime] = useState<number | null>(null)
   const [isAdLoading, setIsAdLoading] = useState(false)
+  const [InlineAd, setInlineAd] = useState<InlineAdComponent | null>(null)
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startTimeRef = useRef<number>(0)
+
+  useEffect(() => {
+    loadAppsInTossFramework().then(framework => {
+      if (framework) {
+        setInlineAd(() => framework.InlineAd)
+      }
+    })
+  }, [])
 
   const handleStart = useCallback(() => {
     setState('waiting')
@@ -189,7 +199,10 @@ function ReactionSpeedPage() {
         </View>
 
         <View style={styles.bannerArea}>
-          <Text style={styles.bannerDebugText}>배너 광고 영역</Text>
+          {InlineAd != null
+            ? <InlineAd adGroupId={BANNER_AD_GROUP_ID} impressFallbackOnMount={true} />
+            : __DEV__ && <Text style={styles.bannerDebugText}>배너 광고 영역</Text>
+          }
         </View>
       </View>
     )
