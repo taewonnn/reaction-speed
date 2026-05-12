@@ -1,11 +1,11 @@
 import { createRoute } from '@granite-js/react-native'
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  Share,
   StyleSheet,
-  View,
   Text,
   TouchableOpacity,
-  Share,
+  View,
 } from 'react-native'
 
 type GameState =
@@ -16,19 +16,16 @@ type GameState =
   | 'too_early'
 
 type AppsInTossFramework = typeof import('@apps-in-toss/framework')
+type InlineAdComponent = AppsInTossFramework['InlineAd']
+
+const FULLSCREEN_AD_GROUP_ID = 'ait.v2.live.a2c2333373d542b2'
+const BANNER_AD_GROUP_ID = 'ait.v2.live.14e6d521eb564f44'
+const FREE_RETRY_LIMIT = 3
 
 export const Route = createRoute('/', {
   component: ReactionSpeedPage,
 })
 
-
-const FULLSCREEN_AD_GROUP_ID = 'ait.v2.live.a2c2333373d542b2';
-const BANNER_AD_GROUP_ID = 'ait.v2.live.14e6d521eb564f44';
-
-/**
- * 로컬 개발 환경에서는 @apps-in-toss/framework import 자체가 에러날 수 있어서
- * 실제 광고 버튼을 눌렀을 때만 동적으로 불러옵니다.
- */
 async function loadAppsInTossFramework(): Promise<AppsInTossFramework | null> {
   try {
     return await import('@apps-in-toss/framework')
@@ -38,26 +35,34 @@ async function loadAppsInTossFramework(): Promise<AppsInTossFramework | null> {
   }
 }
 
-type InlineAdComponent = AppsInTossFramework['InlineAd']
-
-function ReactionSpeedPage() {
+function ReactionSpeedPage(): React.ReactElement {
   const [state, setState] = useState<GameState>('idle')
   const [reactionTime, setReactionTime] = useState<number | null>(null)
   const [isAdLoading, setIsAdLoading] = useState(false)
+  const [freeRetryCount, setFreeRetryCount] = useState(0)
   const [InlineAd, setInlineAd] = useState<InlineAdComponent | null>(null)
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const startTimeRef = useRef<number>(0)
+  const startTimeRef = useRef(0)
 
   useEffect(() => {
+    let mounted = true
+
     loadAppsInTossFramework().then(framework => {
-      if (framework) {
-        setInlineAd(() => framework.InlineAd)
-      }
+      if (!mounted || !framework) return
+      setInlineAd(() => framework.InlineAd)
     })
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const handleStart = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+    }
+
     setState('waiting')
     setReactionTime(null)
 
@@ -81,22 +86,11 @@ function ReactionSpeedPage() {
 
     if (state === 'ready') {
       const elapsed = Date.now() - startTimeRef.current
-
       setReactionTime(elapsed)
       setState('result')
     }
   }, [state])
 
-  /**
-   * 광고보고 다시하기
-   *
-   * 동작 흐름:
-   * 1. @apps-in-toss/framework 동적 로드
-   * 2. loadFullScreenAd 로 전면형 광고 로드
-   * 3. loaded 이벤트 수신 시 showFullScreenAd 로 광고 노출
-   * 4. dismissed 또는 failedToShow 시 게임 재시작
-   * 5. 로컬/미지원/에러 상황에서는 바로 게임 재시작
-   */
   const handleWatchAdAndRestart = useCallback(async () => {
     if (isAdLoading) return
 
@@ -112,10 +106,7 @@ function ReactionSpeedPage() {
 
     const { loadFullScreenAd, showFullScreenAd } = framework
 
-    if (
-      !loadFullScreenAd.isSupported() ||
-      !showFullScreenAd.isSupported()
-    ) {
+    if (!loadFullScreenAd.isSupported() || !showFullScreenAd.isSupported()) {
       setIsAdLoading(false)
       handleStart()
       return
@@ -162,8 +153,6 @@ function ReactionSpeedPage() {
               restartOnce()
             },
           })
-
-          return
         }
 
         if (event.type === 'failedToShow') {
@@ -179,6 +168,50 @@ function ReactionSpeedPage() {
     })
   }, [handleStart, isAdLoading])
 
+  const handleRetry = useCallback(() => {
+    if (freeRetryCount < FREE_RETRY_LIMIT) {
+      setFreeRetryCount(prev => prev + 1)
+      handleStart()
+      return
+    }
+
+    handleWatchAdAndRestart()
+  }, [freeRetryCount, handleStart, handleWatchAdAndRestart])
+
+  const getRating = (time: number) => {
+    if (time < 200) return '번개 같은 반응!'
+    if (time < 300) return '매우 빠름'
+    if (time < 500) return '보통'
+    return '조금 느려요'
+  }
+
+  const getRatingColor = (time: number) => {
+    if (time < 200) return '#00C851'
+    if (time < 300) return '#3182F6'
+    if (time < 500) return '#FF8C00'
+    return '#E84040'
+  }
+
+  const handleShare = async (currentTime: number, currentRating: string) => {
+    try {
+      let shareLink = ''
+      try {
+        const { getTossShareLink } = await import('@apps-in-toss/native-modules')
+        shareLink = await getTossShareLink('intoss://reaction-speed-test')
+      } catch {
+        // 링크 생성 실패 시 텍스트만 공유
+      }
+
+      const message = shareLink
+        ? `내 반응속도는 ${currentTime}ms ⚡️\n\n${currentRating}\n\n너도 도전해봐!\n${shareLink}`
+        : `내 반응속도는 ${currentTime}ms ⚡️\n\n${currentRating}\n\n너도 도전해봐!`
+
+      await Share.share({ message })
+    } catch (error) {
+      console.error('공유 실패:', error)
+    }
+  }
+
   if (state === 'idle') {
     return (
       <View style={styles.startContainer}>
@@ -190,19 +223,18 @@ function ReactionSpeedPage() {
             최대한 빨리 탭하세요!
           </Text>
 
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleStart}
-          >
+          <TouchableOpacity style={styles.primaryButton} onPress={handleStart}>
             <Text style={styles.primaryButtonText}>시작하기</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.bannerArea}>
-          {InlineAd != null
-            ? <InlineAd adGroupId={BANNER_AD_GROUP_ID} impressFallbackOnMount={true} />
-            : __DEV__ && <Text style={styles.bannerDebugText}>배너 광고 영역</Text>
-          }
+          {InlineAd != null && (
+            <InlineAd
+              adGroupId={BANNER_AD_GROUP_ID}
+              impressFallbackOnMount
+            />
+          )}
         </View>
       </View>
     )
@@ -249,70 +281,55 @@ function ReactionSpeedPage() {
     )
   }
 
-  const time = reactionTime!
-
-  const rating =
-    time < 200
-      ? '번개 같은 반응!'
-      : time < 300
-        ? '매우 빠름'
-        : time < 500
-          ? '보통'
-          : '조금 느려요'
-
-  const ratingColor =
-    time < 200
-      ? '#00C851'
-      : time < 300
-        ? '#3182F6'
-        : time < 500
-          ? '#FF8C00'
-          : '#E84040'
-
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message:
-          `내 반응속도는 ${time}ms ⚡️\n\n` +
-          `${rating}\n\n` +
-          `너도 도전해봐!`,
-      })
-    } catch (error) {
-      console.error('공유 실패:', error)
-    }
-  }
+  const currentTime = reactionTime ?? 0
+  const currentRating = getRating(currentTime)
+  const currentRatingColor = getRatingColor(currentTime)
+  const remainingFreeRetry = Math.max(FREE_RETRY_LIMIT - freeRetryCount, 0)
+  const shouldShowAdRetry = freeRetryCount >= FREE_RETRY_LIMIT
 
   return (
     <View style={styles.resultContainer}>
       <View style={styles.resultContent}>
         <Text style={styles.resultLabel}>반응속도</Text>
 
-        <Text style={styles.resultTime}>{time}ms</Text>
+        <Text style={styles.resultTime}>{currentTime}ms</Text>
 
-        <Text style={[styles.resultRating, { color: ratingColor }]}>
-          {rating}
+        <Text style={[styles.resultRating, { color: currentRatingColor }]}>
+          {currentRating}
         </Text>
 
         <TouchableOpacity
           style={[
-            styles.adButton,
+            shouldShowAdRetry ? styles.adButton : styles.primaryButton,
             isAdLoading && styles.disabledButton,
           ]}
           disabled={isAdLoading}
-          onPress={handleWatchAdAndRestart}
+          onPress={handleRetry}
         >
           <Text style={styles.primaryButtonText}>
-            {isAdLoading ? '광고 불러오는 중...' : '광고보고 다시하기'}
+            {isAdLoading
+              ? '광고 불러오는 중...'
+              : shouldShowAdRetry
+                ? '광고보고 다시하기'
+                : `다시하기 (${remainingFreeRetry}회 남음)`}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+        <TouchableOpacity
+          style={styles.shareButton}
+          onPress={() => handleShare(currentTime, currentRating)}
+        >
           <Text style={styles.shareButtonText}>공유하기</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.bannerArea}>
-        <Text style={styles.bannerDebugText}>배너 광고 영역</Text>
+        {InlineAd != null && (
+          <InlineAd
+            adGroupId={BANNER_AD_GROUP_ID}
+            impressFallbackOnMount
+          />
+        )}
       </View>
     </View>
   )
@@ -482,17 +499,7 @@ const styles = StyleSheet.create({
   bannerArea: {
     width: '100%',
     height: 96,
-    backgroundColor: 'rgba(255, 107, 0, 0.18)',
-    borderTopWidth: 2,
-    borderTopColor: '#FF6B00',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  bannerDebugText: {
-    color: '#FF6B00',
-    fontSize: 13,
-    fontWeight: '700',
+    overflow: 'hidden',
   },
 })
 
