@@ -7,6 +7,6 @@ function AppContainer({ children }: PropsWithChildren<InitialProps>) {
 }
 
 export default Granite.registerApp(AppContainer, {
-  appName: 'reaction-speed',
+  appName: 'reaction-speed-test',
   context,
 });
