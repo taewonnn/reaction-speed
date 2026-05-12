@@ -4,7 +4,7 @@ import { appsInToss } from '@apps-in-toss/plugins';
 import { defineConfig } from '@granite-js/react-native/config';
 
 export default defineConfig({
-  appName: 'reaction-speed',
+  appName: 'reaction-speed-test',
   scheme: 'intoss',
   plugins: [
     router(),
