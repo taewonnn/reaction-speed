@@ -154,11 +154,6 @@ function ReactionSpeedPage(): React.ReactElement {
             },
           })
         }
-
-        if (event.type === 'failedToShow') {
-          cleanupLoadAd?.()
-          restartOnce()
-        }
       },
       onError: error => {
         console.error('[FullScreenAd] load error:', error)
