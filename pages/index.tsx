@@ -20,7 +20,7 @@ type InlineAdComponent = AppsInTossFramework['InlineAd']
 
 const FULLSCREEN_AD_GROUP_ID = 'ait.v2.live.a2c2333373d542b2'
 const BANNER_AD_GROUP_ID = 'ait.v2.live.14e6d521eb564f44'
-const FREE_RETRY_LIMIT = 3
+const TOTAL_ROUNDS = 3
 
 export const Route = createRoute('/', {
   component: ReactionSpeedPage,
@@ -37,9 +37,9 @@ async function loadAppsInTossFramework(): Promise<AppsInTossFramework | null> {
 
 function ReactionSpeedPage(): React.ReactElement {
   const [state, setState] = useState<GameState>('idle')
-  const [reactionTime, setReactionTime] = useState<number | null>(null)
+  const [reactionTimes, setReactionTimes] = useState<number[]>([])
+  const [currentRound, setCurrentRound] = useState(1)
   const [isAdLoading, setIsAdLoading] = useState(false)
-  const [freeRetryCount, setFreeRetryCount] = useState(0)
   const [InlineAd, setInlineAd] = useState<InlineAdComponent | null>(null)
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -58,21 +58,24 @@ function ReactionSpeedPage(): React.ReactElement {
     }
   }, [])
 
-  const handleStart = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-    }
-
+  const startNextRound = useCallback(() => {
     setState('waiting')
-    setReactionTime(null)
-
     const delay = Math.random() * 3000 + 1000
-
     timerRef.current = setTimeout(() => {
       setState('ready')
       startTimeRef.current = Date.now()
     }, delay)
   }, [])
+
+  const handleStart = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+    }
+
+    setReactionTimes([])
+    setCurrentRound(1)
+    startNextRound()
+  }, [startNextRound])
 
   const handleTap = useCallback(() => {
     if (state === 'waiting') {
@@ -86,10 +89,17 @@ function ReactionSpeedPage(): React.ReactElement {
 
     if (state === 'ready') {
       const elapsed = Date.now() - startTimeRef.current
-      setReactionTime(elapsed)
-      setState('result')
+      const newTimes = [...reactionTimes, elapsed]
+      setReactionTimes(newTimes)
+
+      if (currentRound < TOTAL_ROUNDS) {
+        setCurrentRound(prev => prev + 1)
+        startNextRound()
+      } else {
+        setState('result')
+      }
     }
-  }, [state])
+  }, [state, reactionTimes, currentRound, startNextRound])
 
   const handleWatchAdAndRestart = useCallback(async () => {
     if (isAdLoading) return
@@ -154,6 +164,11 @@ function ReactionSpeedPage(): React.ReactElement {
             },
           })
         }
+
+        // if (event.type === 'failedToShow') {
+        //   cleanupLoadAd?.()
+        //   restartOnce()
+        // }
       },
       onError: error => {
         console.error('[FullScreenAd] load error:', error)
@@ -162,16 +177,6 @@ function ReactionSpeedPage(): React.ReactElement {
       },
     })
   }, [handleStart, isAdLoading])
-
-  const handleRetry = useCallback(() => {
-    if (freeRetryCount < FREE_RETRY_LIMIT) {
-      setFreeRetryCount(prev => prev + 1)
-      handleStart()
-      return
-    }
-
-    handleWatchAdAndRestart()
-  }, [freeRetryCount, handleStart, handleWatchAdAndRestart])
 
   const getRating = (time: number) => {
     if (time < 200) return '번개 같은 반응!'
@@ -187,7 +192,7 @@ function ReactionSpeedPage(): React.ReactElement {
     return '#E84040'
   }
 
-  const handleShare = async (currentTime: number, currentRating: string) => {
+  const handleShare = async (avgTime: number, rating: string) => {
     try {
       let shareLink = ''
       try {
@@ -198,8 +203,8 @@ function ReactionSpeedPage(): React.ReactElement {
       }
 
       const message = shareLink
-        ? `내 반응속도는 ${currentTime}ms ⚡️\n\n${currentRating}\n\n너도 도전해봐!\n${shareLink}`
-        : `내 반응속도는 ${currentTime}ms ⚡️\n\n${currentRating}\n\n너도 도전해봐!`
+        ? `내 반응속도 평균은 ${avgTime}ms ⚡️\n\n${rating}\n\n너도 도전해봐!\n${shareLink}`
+        : `내 반응속도 평균은 ${avgTime}ms ⚡️\n\n${rating}\n\n너도 도전해봐!`
 
       await Share.share({ message })
     } catch (error) {
@@ -215,7 +220,8 @@ function ReactionSpeedPage(): React.ReactElement {
 
           <Text style={styles.description}>
             화면이 초록색으로 바뀌면{'\n'}
-            최대한 빨리 탭하세요!
+            최대한 빨리 탭하세요!{'\n\n'}
+            총 3번 측정 후 평균을 알려드려요
           </Text>
 
           <TouchableOpacity style={styles.primaryButton} onPress={handleStart}>
@@ -242,6 +248,7 @@ function ReactionSpeedPage(): React.ReactElement {
         onPress={handleTap}
         activeOpacity={1}
       >
+        <Text style={styles.roundIndicator}>{currentRound} / {TOTAL_ROUNDS}</Text>
         <Text style={styles.waitingTitle}>잠깐만요...</Text>
         <Text style={styles.waitingSubText}>초록색으로 바뀌면 탭하세요</Text>
       </TouchableOpacity>
@@ -255,6 +262,7 @@ function ReactionSpeedPage(): React.ReactElement {
         onPress={handleTap}
         activeOpacity={1}
       >
+        <Text style={styles.roundIndicator}>{currentRound} / {TOTAL_ROUNDS}</Text>
         <Text style={styles.readyText}>지금!</Text>
       </TouchableOpacity>
     )
@@ -276,43 +284,45 @@ function ReactionSpeedPage(): React.ReactElement {
     )
   }
 
-  const currentTime = reactionTime ?? 0
-  const currentRating = getRating(currentTime)
-  const currentRatingColor = getRatingColor(currentTime)
-  const remainingFreeRetry = Math.max(FREE_RETRY_LIMIT - freeRetryCount, 0)
-  const shouldShowAdRetry = freeRetryCount >= FREE_RETRY_LIMIT
+  const avgTime = Math.round(
+    reactionTimes.reduce((a, b) => a + b, 0) / reactionTimes.length
+  )
+  const currentRating = getRating(avgTime)
+  const currentRatingColor = getRatingColor(avgTime)
 
   return (
     <View style={styles.resultContainer}>
       <View style={styles.resultContent}>
-        <Text style={styles.resultLabel}>반응속도</Text>
+        <Text style={styles.resultLabel}>평균 반응속도</Text>
 
-        <Text style={styles.resultTime}>{currentTime}ms</Text>
+        <Text style={styles.resultTime}>{avgTime}ms</Text>
 
         <Text style={[styles.resultRating, { color: currentRatingColor }]}>
           {currentRating}
         </Text>
 
+        <View style={styles.roundResults}>
+          {reactionTimes.map((t, i) => (
+            <View key={i} style={styles.roundRow}>
+              <Text style={styles.roundRowLabel}>{i + 1}회차</Text>
+              <Text style={styles.roundRowTime}>{t}ms</Text>
+            </View>
+          ))}
+        </View>
+
         <TouchableOpacity
-          style={[
-            shouldShowAdRetry ? styles.adButton : styles.primaryButton,
-            isAdLoading && styles.disabledButton,
-          ]}
+          style={[styles.adButton, isAdLoading && styles.disabledButton]}
           disabled={isAdLoading}
-          onPress={handleRetry}
+          onPress={handleWatchAdAndRestart}
         >
           <Text style={styles.primaryButtonText}>
-            {isAdLoading
-              ? '광고 불러오는 중...'
-              : shouldShowAdRetry
-                ? '광고보고 다시하기'
-                : `다시하기 (${remainingFreeRetry}회 남음)`}
+            {isAdLoading ? '광고 불러오는 중...' : '광고보고 다시하기'}
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.shareButton}
-          onPress={() => handleShare(currentTime, currentRating)}
+          onPress={() => handleShare(avgTime, currentRating)}
         >
           <Text style={styles.shareButtonText}>공유하기</Text>
         </TouchableOpacity>
@@ -426,6 +436,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  roundIndicator: {
+    position: 'absolute',
+    top: 48,
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.8)',
+  },
+
   waitingScreen: {
     backgroundColor: '#4E5968',
   },
@@ -488,7 +506,34 @@ const styles = StyleSheet.create({
   resultRating: {
     fontSize: 20,
     fontWeight: '600',
-    marginBottom: 48,
+    marginBottom: 24,
+  },
+
+  roundResults: {
+    width: '100%',
+    gap: 8,
+    marginBottom: 32,
+  },
+
+  roundRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+  },
+
+  roundRowLabel: {
+    fontSize: 14,
+    color: '#6B7684',
+    fontWeight: '500',
+  },
+
+  roundRowTime: {
+    fontSize: 14,
+    color: '#191F28',
+    fontWeight: '600',
   },
 
   bannerArea: {
