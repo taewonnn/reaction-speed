@@ -18,8 +18,9 @@ type GameState =
 type AppsInTossFramework = typeof import('@apps-in-toss/framework')
 type InlineAdComponent = AppsInTossFramework['InlineAd']
 
-const FULLSCREEN_AD_GROUP_ID = 'ait.v2.live.a2c2333373d542b2'
-const BANNER_AD_GROUP_ID = 'ait.v2.live.14e6d521eb564f44'
+const FULLSCREEN_AD_GROUP_ID = 'ait.v2.live.6ce080f311684f80'
+const BANNER_AD_GROUP_ID = 'ait.v2.live.84554ae75d174735'
+
 const TOTAL_ROUNDS = 3
 
 export const Route = createRoute('/', {
@@ -197,7 +198,7 @@ function ReactionSpeedPage(): React.ReactElement {
       let shareLink = ''
       try {
         const { getTossShareLink } = await import('@apps-in-toss/native-modules')
-        shareLink = await getTossShareLink('intoss://reaction-speed-test')
+        shareLink = await getTossShareLink('intoss://tap-speed')
       } catch {
         // 링크 생성 실패 시 텍스트만 공유
       }

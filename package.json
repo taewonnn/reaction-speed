@@ -1,5 +1,5 @@
 {
-  "name": "reaction-speed-test",
+  "name": "tap-speed",
   "private": true,
   "scripts": {
     "dev": "granite dev",

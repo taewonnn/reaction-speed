@@ -1,2 +1,2 @@
 # Granite App
-# reaction-speed-test
+# tap-speed
