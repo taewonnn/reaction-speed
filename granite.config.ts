@@ -4,7 +4,7 @@ import { appsInToss } from '@apps-in-toss/plugins';
 import { defineConfig } from '@granite-js/react-native/config';
 
 export default defineConfig({
-  appName: 'reaction-speed-test',
+  appName: 'tap-speed',
   scheme: 'intoss',
   plugins: [
     router(),
@@ -12,9 +12,9 @@ export default defineConfig({
     ...appsInToss({
       appType: 'general',
       brand: {
-        displayName: '반응속도 게임',
+        displayName: '반응속도 내기',
         primaryColor: '#3182F6',
-        icon: 'https://static.toss.im/appsintoss/33837/fd803c7e-1b9c-422d-acc7-e1865ec37234.png',
+        icon: 'https://static.toss.im/appsintoss/33837/9c9e8b00-934b-411b-ba91-fb6c59fb2330.png',
       },
       permissions: [],
     }),
