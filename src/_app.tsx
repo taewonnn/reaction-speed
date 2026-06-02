@@ -1,12 +1,11 @@
 import React, { type PropsWithChildren } from 'react';
-import { Granite, type InitialProps } from '@granite-js/react-native';
+import { AppsInToss } from '@apps-in-toss/framework';
+import { type InitialProps } from '@granite-js/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { context } from '../require.context';
 
 function AppContainer({ children }: PropsWithChildren<InitialProps>) {
-  return <>{children}</>;
+  return <SafeAreaProvider>{children}</SafeAreaProvider>;
 }
 
-export default Granite.registerApp(AppContainer, {
-  appName: 'tap-speed',
-  context,
-});
+export default AppsInToss.registerApp(AppContainer, { context });
